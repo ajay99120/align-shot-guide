@@ -16,22 +16,18 @@ export const useDeviceMotion = () => {
 
     const startWatching = async () => {
       try {
-        // Request permissions
-        const permissions = await Motion.requestPermissions();
-        if (permissions.granted) {
-          setIsSupported(true);
-          isWatching = true;
-          
-          await Motion.addListener('orientation', (event) => {
-            if (isWatching) {
-              setMotion({
-                alpha: event.alpha || 0,
-                beta: event.beta || 0,
-                gamma: event.gamma || 0
-              });
-            }
-          });
-        }
+        setIsSupported(true);
+        isWatching = true;
+        
+        await Motion.addListener('orientation', (event) => {
+          if (isWatching) {
+            setMotion({
+              alpha: event.alpha || 0,
+              beta: event.beta || 0,
+              gamma: event.gamma || 0
+            });
+          }
+        });
       } catch (error) {
         console.log('Device motion not supported:', error);
         setIsSupported(false);
