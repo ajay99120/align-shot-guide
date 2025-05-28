@@ -22,6 +22,7 @@ export const CameraGuidance: React.FC = () => {
   const [guidanceDirection, setGuidanceDirection] = useState<'left' | 'right' | 'center'>('center');
   const [isCapturing, setIsCapturing] = useState(false);
   const [totalPoints, setTotalPoints] = useState(7);
+  const [debugInfo, setDebugInfo] = useState<string>('App loaded');
   
   const { motion, isSupported: motionSupported } = useDeviceMotion();
   const { triggerSuccess, triggerWarning, triggerError } = useHapticFeedback();
@@ -29,7 +30,16 @@ export const CameraGuidance: React.FC = () => {
   const currentPoint = session?.points[session.currentPointIndex];
   const alignment = currentPoint ? calculateAlignment(currentPoint, motion) : { isAligned: false, horizontalOffset: 0, verticalOffset: 0, rotation: 0 };
 
+  // Add debug logging
+  useEffect(() => {
+    console.log('CameraGuidance component mounted');
+    console.log('Motion supported:', motionSupported);
+    console.log('Current motion:', motion);
+    setDebugInfo(`Motion: ${motionSupported ? 'Supported' : 'Not supported'}, Alpha: ${motion.alpha.toFixed(1)}`);
+  }, [motionSupported, motion]);
+
   const startSession = useCallback(() => {
+    console.log('Starting session with', totalPoints, 'points');
     const points = generateCapturePoints(totalPoints);
     const newSession: CaptureSession = {
       id: generateSessionId(),
@@ -42,6 +52,7 @@ export const CameraGuidance: React.FC = () => {
     };
     
     setSession(newSession);
+    setDebugInfo(`Session started with ${totalPoints} points`);
     toast.success('Capture session started! Align with the first point.');
   }, [totalPoints]);
 
@@ -145,10 +156,14 @@ export const CameraGuidance: React.FC = () => {
   useEffect(() => {
     const requestPermissions = async () => {
       try {
+        console.log('Requesting camera permissions...');
         await Camera.requestPermissions();
+        setDebugInfo(prev => prev + ' | Camera permissions granted');
+        console.log('Camera permissions granted');
       } catch (error) {
-        toast.error('Camera permissions required for this app to work');
         console.error('Permission error:', error);
+        setDebugInfo(prev => prev + ' | Camera permissions failed');
+        toast.error('Camera permissions required for this app to work');
       }
     };
     
@@ -157,14 +172,31 @@ export const CameraGuidance: React.FC = () => {
 
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden">
-      {/* Camera Preview Placeholder */}
-      <div className="absolute inset-0 bg-gradient-to-br from-gray-800 via-gray-900 to-black flex items-center justify-center">
-        <div className="text-white text-center">
+      {/* Camera Preview - Enhanced for mobile */}
+      <div className="absolute inset-0 bg-gradient-to-br from-gray-800 via-gray-900 to-black flex flex-col items-center justify-center">
+        <div className="text-white text-center p-4">
           <div className="text-6xl mb-4">📷</div>
-          <div className="text-xl font-medium">Camera Preview</div>
-          <div className="text-sm opacity-75 mt-2">
+          <div className="text-xl font-medium mb-2">Camera Guidance App</div>
+          <div className="text-sm opacity-75 mb-4">
             {motionSupported ? 'Motion detection active' : 'Motion detection unavailable'}
           </div>
+          
+          {/* Debug information for mobile testing */}
+          <div className="bg-black bg-opacity-50 rounded-lg p-3 mb-4 text-xs">
+            <div>Debug: {debugInfo}</div>
+            <div>Motion: α:{motion.alpha.toFixed(1)} β:{motion.beta.toFixed(1)} γ:{motion.gamma.toFixed(1)}</div>
+            <div>Session: {session ? (session.isActive ? 'Active' : 'Completed') : 'None'}</div>
+          </div>
+
+          {/* Welcome message when no session */}
+          {!session && (
+            <div className="bg-blue-600 bg-opacity-80 rounded-lg p-4 mb-4">
+              <h2 className="text-lg font-bold mb-2">Welcome!</h2>
+              <p className="text-sm">
+                Tap "Start Capture" in the top-right corner to begin taking aligned photos.
+              </p>
+            </div>
+          )}
         </div>
       </div>
 
@@ -201,7 +233,7 @@ export const CameraGuidance: React.FC = () => {
         />
       )}
 
-      {/* Camera Controls */}
+      {/* Camera Controls - Always visible now */}
       <CameraControls
         onStartSession={startSession}
         onStopSession={stopSession}
