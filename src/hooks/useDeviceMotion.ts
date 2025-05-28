@@ -1,6 +1,6 @@
 
 import { useState, useEffect } from 'react';
-import { DeviceMotion } from '@capacitor/device-motion';
+import { Motion } from '@capacitor/motion';
 import { DeviceMotion as DeviceMotionType } from '../types/camera';
 
 export const useDeviceMotion = () => {
@@ -12,21 +12,24 @@ export const useDeviceMotion = () => {
   const [isSupported, setIsSupported] = useState(false);
 
   useEffect(() => {
-    let watchId: string | undefined;
+    let isWatching = false;
 
     const startWatching = async () => {
       try {
         // Request permissions
-        const permissions = await DeviceMotion.requestPermissions();
+        const permissions = await Motion.requestPermissions();
         if (permissions.granted) {
           setIsSupported(true);
+          isWatching = true;
           
-          watchId = await DeviceMotion.addListener('devicemotion', (event) => {
-            setMotion({
-              alpha: event.rotationRate?.alpha || 0,
-              beta: event.rotationRate?.beta || 0,
-              gamma: event.rotationRate?.gamma || 0
-            });
+          await Motion.addListener('orientation', (event) => {
+            if (isWatching) {
+              setMotion({
+                alpha: event.alpha || 0,
+                beta: event.beta || 0,
+                gamma: event.gamma || 0
+              });
+            }
           });
         }
       } catch (error) {
@@ -38,9 +41,8 @@ export const useDeviceMotion = () => {
     startWatching();
 
     return () => {
-      if (watchId) {
-        DeviceMotion.removeAllListeners();
-      }
+      isWatching = false;
+      Motion.removeAllListeners();
     };
   }, []);
 

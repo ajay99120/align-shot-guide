@@ -13,7 +13,7 @@ const config: CapacitorConfig = {
     Camera: {
       permissions: ['camera', 'photos']
     },
-    DeviceMotion: {
+    Motion: {
       permissions: ['motion']
     }
   }
