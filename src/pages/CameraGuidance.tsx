@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useCallback } from 'react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { CameraOverlay } from '../components/CameraOverlay';
@@ -23,6 +22,7 @@ export const CameraGuidance: React.FC = () => {
   const [isCapturing, setIsCapturing] = useState(false);
   const [totalPoints, setTotalPoints] = useState(7);
   const [debugInfo, setDebugInfo] = useState<string>('App loaded');
+  const [permissionsGranted, setPermissionsGranted] = useState(false);
   
   const { motion, isSupported: motionSupported } = useDeviceMotion();
   const { triggerSuccess, triggerWarning, triggerError } = useHapticFeedback();
@@ -38,7 +38,48 @@ export const CameraGuidance: React.FC = () => {
     setDebugInfo(`Motion: ${motionSupported ? 'Supported' : 'Not supported'}, Alpha: ${motion.alpha.toFixed(1)}`);
   }, [motionSupported, motion]);
 
+  // Request camera permissions on mount
+  useEffect(() => {
+    const requestPermissions = async () => {
+      try {
+        console.log('Requesting camera permissions...');
+        const permissions = await Camera.requestPermissions();
+        console.log('Camera permissions result:', permissions);
+        
+        if (permissions.camera === 'granted' && permissions.photos === 'granted') {
+          setPermissionsGranted(true);
+          setDebugInfo(prev => prev + ' | Camera permissions granted');
+          toast.success('Camera permissions granted!');
+        } else {
+          setPermissionsGranted(false);
+          setDebugInfo(prev => prev + ' | Camera permissions denied');
+          toast.error('Camera permissions are required for this app to work. Please enable them in your device settings.');
+        }
+      } catch (error) {
+        console.error('Permission error:', error);
+        setPermissionsGranted(false);
+        setDebugInfo(prev => prev + ' | Camera permissions failed');
+        
+        // Check if this is a web environment
+        if (error && typeof error === 'object' && 'message' in error && 
+            (error as any).message?.includes('Not implemented on web')) {
+          toast.info('Running in web mode - camera features limited');
+          setPermissionsGranted(true); // Allow testing in web
+        } else {
+          toast.error('Failed to request camera permissions. Please enable them manually in device settings.');
+        }
+      }
+    };
+    
+    requestPermissions();
+  }, []);
+
   const startSession = useCallback(() => {
+    if (!permissionsGranted) {
+      toast.error('Camera permissions required to start session');
+      return;
+    }
+    
     console.log('Starting session with', totalPoints, 'points');
     const points = generateCapturePoints(totalPoints);
     const newSession: CaptureSession = {
@@ -54,7 +95,7 @@ export const CameraGuidance: React.FC = () => {
     setSession(newSession);
     setDebugInfo(`Session started with ${totalPoints} points`);
     toast.success('Capture session started! Align with the first point.');
-  }, [totalPoints]);
+  }, [totalPoints, permissionsGranted]);
 
   const stopSession = useCallback(() => {
     if (session) {
@@ -83,16 +124,24 @@ export const CameraGuidance: React.FC = () => {
       return;
     }
 
+    if (!permissionsGranted) {
+      toast.error('Camera permissions required to capture images');
+      return;
+    }
+
     setIsCapturing(true);
     
     try {
+      console.log('Attempting to capture image...');
       const image = await Camera.getPhoto({
         quality: 90,
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
         source: CameraSource.Camera,
+        saveToGallery: true, // This will save to gallery automatically
       });
 
+      console.log('Image captured successfully');
       const updatedPoints = [...session.points];
       updatedPoints[session.currentPointIndex] = {
         ...currentPoint,
@@ -116,16 +165,20 @@ export const CameraGuidance: React.FC = () => {
       if (isComplete) {
         toast.success('All images captured! Session complete.');
       } else {
-        toast.success(`Image ${session.currentPointIndex + 1} captured! Move to next point.`);
+        toast.success(`Image ${session.currentPointIndex + 1} captured and saved to gallery! Move to next point.`);
       }
     } catch (error) {
       triggerError();
-      toast.error('Failed to capture image. Please try again.');
-      console.error('Camera error:', error);
+      console.error('Camera capture error:', error);
+      if (error && typeof error === 'object' && 'message' in error) {
+        toast.error(`Failed to capture image: ${(error as any).message}`);
+      } else {
+        toast.error('Failed to capture image. Please try again.');
+      }
     } finally {
       setIsCapturing(false);
     }
-  }, [session, currentPoint, alignment.isAligned, isCapturing, triggerSuccess, triggerWarning, triggerError]);
+  }, [session, currentPoint, alignment.isAligned, isCapturing, permissionsGranted, triggerSuccess, triggerWarning, triggerError]);
 
   const handleGuidanceUpdate = useCallback((direction: 'left' | 'right' | 'center') => {
     setGuidanceDirection(direction);
@@ -152,24 +205,6 @@ export const CameraGuidance: React.FC = () => {
     }
   }, [alignment.isAligned, session?.isActive, currentPoint, triggerSuccess]);
 
-  // Request camera permissions on mount
-  useEffect(() => {
-    const requestPermissions = async () => {
-      try {
-        console.log('Requesting camera permissions...');
-        await Camera.requestPermissions();
-        setDebugInfo(prev => prev + ' | Camera permissions granted');
-        console.log('Camera permissions granted');
-      } catch (error) {
-        console.error('Permission error:', error);
-        setDebugInfo(prev => prev + ' | Camera permissions failed');
-        toast.error('Camera permissions required for this app to work');
-      }
-    };
-    
-    requestPermissions();
-  }, []);
-
   return (
     <div className="relative w-full h-screen bg-black overflow-hidden">
       {/* Camera Preview - Enhanced for mobile */}
@@ -181,15 +216,30 @@ export const CameraGuidance: React.FC = () => {
             {motionSupported ? 'Motion detection active' : 'Motion detection unavailable'}
           </div>
           
+          {/* Permission status */}
+          <div className={`rounded-lg p-3 mb-4 ${
+            permissionsGranted ? 'bg-green-600 bg-opacity-80' : 'bg-red-600 bg-opacity-80'
+          }`}>
+            <div className="text-sm font-medium">
+              Camera Permissions: {permissionsGranted ? '✓ Granted' : '✗ Required'}
+            </div>
+            {!permissionsGranted && (
+              <div className="text-xs mt-1">
+                Enable camera permissions in your device settings to use this app
+              </div>
+            )}
+          </div>
+          
           {/* Debug information for mobile testing */}
           <div className="bg-black bg-opacity-50 rounded-lg p-3 mb-4 text-xs">
             <div>Debug: {debugInfo}</div>
             <div>Motion: α:{motion.alpha.toFixed(1)} β:{motion.beta.toFixed(1)} γ:{motion.gamma.toFixed(1)}</div>
             <div>Session: {session ? (session.isActive ? 'Active' : 'Completed') : 'None'}</div>
+            <div>Permissions: {permissionsGranted ? 'OK' : 'Missing'}</div>
           </div>
 
           {/* Welcome message when no session */}
-          {!session && (
+          {!session && permissionsGranted && (
             <div className="bg-blue-600 bg-opacity-80 rounded-lg p-4 mb-4">
               <h2 className="text-lg font-bold mb-2">Welcome!</h2>
               <p className="text-sm">
@@ -219,7 +269,7 @@ export const CameraGuidance: React.FC = () => {
       {/* Capture Button */}
       {session?.isActive && (
         <CaptureButton
-          isReady={alignment.isAligned}
+          isReady={alignment.isAligned && permissionsGranted}
           isCapturing={isCapturing}
           onCapture={handleCapture}
         />
