@@ -23,6 +23,7 @@ export const CameraGuidance: React.FC = () => {
   const [totalPoints, setTotalPoints] = useState(7);
   const [debugInfo, setDebugInfo] = useState<string>('App loaded');
   const [permissionsGranted, setPermissionsGranted] = useState(false);
+  const [permissionsRequested, setPermissionsRequested] = useState(false);
   
   const { motion, isSupported: motionSupported } = useDeviceMotion();
   const { triggerSuccess, triggerWarning, triggerError } = useHapticFeedback();
@@ -43,22 +44,55 @@ export const CameraGuidance: React.FC = () => {
     setDebugInfo(`Motion: ${motionSupported ? 'OK' : 'NO'} | ${motionString} | ${alignmentString} | Dir: ${guidanceDirection}`);
   }, [motionSupported, motion, alignment, guidanceDirection]);
 
-  // Request camera permissions on mount
+  // Aggressive permission request on mount
   useEffect(() => {
     const requestPermissions = async () => {
+      if (permissionsRequested) return;
+      
       try {
-        console.log('Requesting camera permissions...');
-        const permissions = await Camera.requestPermissions();
-        console.log('Camera permissions result:', permissions);
+        console.log('Requesting camera permissions aggressively...');
+        setPermissionsRequested(true);
+        
+        // First check current permissions
+        const currentPermissions = await Camera.checkPermissions();
+        console.log('Current permissions:', currentPermissions);
+        
+        if (currentPermissions.camera === 'granted' && currentPermissions.photos === 'granted') {
+          setPermissionsGranted(true);
+          setDebugInfo(prev => prev + ' | Permissions already granted');
+          toast.success('Camera permissions ready!');
+          return;
+        }
+        
+        // Request permissions with prompt
+        console.log('Requesting permissions with prompt...');
+        const permissions = await Camera.requestPermissions({
+          permissions: ['camera', 'photos']
+        });
+        console.log('Permission request result:', permissions);
         
         if (permissions.camera === 'granted' && permissions.photos === 'granted') {
           setPermissionsGranted(true);
           setDebugInfo(prev => prev + ' | Camera permissions granted');
-          toast.success('Camera permissions granted!');
-        } else {
+          toast.success('Camera permissions granted! You can now start capturing.');
+        } else if (permissions.camera === 'denied' || permissions.photos === 'denied') {
           setPermissionsGranted(false);
           setDebugInfo(prev => prev + ' | Camera permissions denied');
-          toast.error('Camera permissions are required for this app to work. Please enable them in your device settings.');
+          toast.error('Camera permissions denied. Please enable them in your device settings and restart the app.');
+        } else if (permissions.camera === 'prompt' || permissions.photos === 'prompt') {
+          // Try requesting again if still in prompt state
+          toast.info('Please allow camera permissions when prompted.');
+          setTimeout(async () => {
+            try {
+              const retryPermissions = await Camera.requestPermissions();
+              if (retryPermissions.camera === 'granted' && retryPermissions.photos === 'granted') {
+                setPermissionsGranted(true);
+                toast.success('Camera permissions granted!');
+              }
+            } catch (retryError) {
+              console.log('Retry permission request failed:', retryError);
+            }
+          }, 1000);
         }
       } catch (error) {
         console.error('Permission error:', error);
@@ -71,17 +105,47 @@ export const CameraGuidance: React.FC = () => {
           toast.info('Running in web mode - camera features limited');
           setPermissionsGranted(true); // Allow testing in web
         } else {
-          toast.error('Failed to request camera permissions. Please enable them manually in device settings.');
+          toast.error('Failed to request camera permissions. Please check your device settings.');
         }
       }
     };
     
-    requestPermissions();
-  }, []);
+    // Add a small delay to ensure the app is fully loaded
+    const timer = setTimeout(() => {
+      requestPermissions();
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [permissionsRequested]);
+
+  // Manual permission request function
+  const requestPermissionsManually = async () => {
+    try {
+      setDebugInfo(prev => prev + ' | Manual permission request');
+      toast.info('Requesting camera permissions...');
+      
+      const permissions = await Camera.requestPermissions({
+        permissions: ['camera', 'photos']
+      });
+      
+      console.log('Manual permission result:', permissions);
+      
+      if (permissions.camera === 'granted' && permissions.photos === 'granted') {
+        setPermissionsGranted(true);
+        toast.success('Camera permissions granted!');
+      } else {
+        toast.error('Please enable camera permissions in your device settings.');
+      }
+    } catch (error) {
+      console.error('Manual permission request failed:', error);
+      toast.error('Failed to request permissions. Please enable them manually in device settings.');
+    }
+  };
 
   const startSession = useCallback(() => {
     if (!permissionsGranted) {
       toast.error('Camera permissions required to start session');
+      requestPermissionsManually();
       return;
     }
     
@@ -131,6 +195,7 @@ export const CameraGuidance: React.FC = () => {
 
     if (!permissionsGranted) {
       toast.error('Camera permissions required to capture images');
+      requestPermissionsManually();
       return;
     }
 
@@ -143,7 +208,7 @@ export const CameraGuidance: React.FC = () => {
         allowEditing: false,
         resultType: CameraResultType.DataUrl,
         source: CameraSource.Camera,
-        saveToGallery: true, // This will save to gallery automatically
+        saveToGallery: true,
       });
 
       console.log('Image captured successfully');
@@ -222,16 +287,24 @@ export const CameraGuidance: React.FC = () => {
             {motionSupported ? 'Motion detection active' : 'Motion detection unavailable'}
           </div>
           
-          {/* Permission status */}
+          {/* Permission status with manual request button */}
           <div className={`rounded-lg p-3 mb-4 ${
             permissionsGranted ? 'bg-green-600 bg-opacity-80' : 'bg-red-600 bg-opacity-80'
           }`}>
-            <div className="text-sm font-medium">
+            <div className="text-sm font-medium mb-2">
               Camera Permissions: {permissionsGranted ? '✓ Granted' : '✗ Required'}
             </div>
             {!permissionsGranted && (
-              <div className="text-xs mt-1">
-                Enable camera permissions in your device settings to use this app
+              <div className="space-y-2">
+                <div className="text-xs">
+                  Enable camera permissions to use this app
+                </div>
+                <button
+                  onClick={requestPermissionsManually}
+                  className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
+                >
+                  Request Permissions
+                </button>
               </div>
             )}
           </div>
@@ -242,6 +315,7 @@ export const CameraGuidance: React.FC = () => {
             <div>Alignment: {alignment.isAligned ? '✓ ALIGNED' : '✗ NOT ALIGNED'}</div>
             <div>Session: {session ? (session.isActive ? 'Active' : 'Completed') : 'None'}</div>
             <div>Permissions: {permissionsGranted ? 'OK' : 'Missing'}</div>
+            <div>Requested: {permissionsRequested ? 'Yes' : 'No'}</div>
             {motionSupported && (
               <div className="text-yellow-300">
                 Tilt device left/right to see arrow movement
@@ -312,7 +386,7 @@ export const CameraGuidance: React.FC = () => {
         />
       )}
 
-      {/* Camera Controls - Always visible now */}
+      {/* Camera Controls */}
       <CameraControls
         onStartSession={startSession}
         onStopSession={stopSession}
