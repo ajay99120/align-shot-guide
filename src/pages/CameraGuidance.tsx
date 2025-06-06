@@ -30,13 +30,18 @@ export const CameraGuidance: React.FC = () => {
   const currentPoint = session?.points[session.currentPointIndex];
   const alignment = currentPoint ? calculateAlignment(currentPoint, motion) : { isAligned: false, horizontalOffset: 0, verticalOffset: 0, rotation: 0 };
 
-  // Add debug logging
+  // Enhanced debug logging with motion data
   useEffect(() => {
     console.log('CameraGuidance component mounted');
     console.log('Motion supported:', motionSupported);
     console.log('Current motion:', motion);
-    setDebugInfo(`Motion: ${motionSupported ? 'Supported' : 'Not supported'}, Alpha: ${motion.alpha.toFixed(1)}`);
-  }, [motionSupported, motion]);
+    console.log('Alignment:', alignment);
+    console.log('Guidance direction:', guidanceDirection);
+    
+    const motionString = `α:${motion.alpha.toFixed(1)} β:${motion.beta.toFixed(1)} γ:${motion.gamma.toFixed(1)}`;
+    const alignmentString = `H:${alignment.horizontalOffset.toFixed(1)} V:${alignment.verticalOffset.toFixed(1)}`;
+    setDebugInfo(`Motion: ${motionSupported ? 'OK' : 'NO'} | ${motionString} | ${alignmentString} | Dir: ${guidanceDirection}`);
+  }, [motionSupported, motion, alignment, guidanceDirection]);
 
   // Request camera permissions on mount
   useEffect(() => {
@@ -182,6 +187,7 @@ export const CameraGuidance: React.FC = () => {
 
   const handleGuidanceUpdate = useCallback((direction: 'left' | 'right' | 'center') => {
     setGuidanceDirection(direction);
+    console.log('Guidance direction updated:', direction);
   }, []);
 
   const handleImageClick = useCallback((imageIndex: number) => {
@@ -196,7 +202,7 @@ export const CameraGuidance: React.FC = () => {
     }
   }, [session]);
 
-  // Provide haptic feedback for alignment changes
+  // Enhanced haptic feedback for alignment changes
   useEffect(() => {
     if (session?.isActive && currentPoint) {
       if (alignment.isAligned) {
@@ -230,13 +236,35 @@ export const CameraGuidance: React.FC = () => {
             )}
           </div>
           
-          {/* Debug information for mobile testing */}
-          <div className="bg-black bg-opacity-50 rounded-lg p-3 mb-4 text-xs">
+          {/* Enhanced debug information for mobile testing */}
+          <div className="bg-black bg-opacity-50 rounded-lg p-3 mb-4 text-xs space-y-1">
             <div>Debug: {debugInfo}</div>
-            <div>Motion: α:{motion.alpha.toFixed(1)} β:{motion.beta.toFixed(1)} γ:{motion.gamma.toFixed(1)}</div>
+            <div>Alignment: {alignment.isAligned ? '✓ ALIGNED' : '✗ NOT ALIGNED'}</div>
             <div>Session: {session ? (session.isActive ? 'Active' : 'Completed') : 'None'}</div>
             <div>Permissions: {permissionsGranted ? 'OK' : 'Missing'}</div>
+            {motionSupported && (
+              <div className="text-yellow-300">
+                Tilt device left/right to see arrow movement
+              </div>
+            )}
           </div>
+
+          {/* Motion test indicator */}
+          {motionSupported && (
+            <div className="bg-blue-600 bg-opacity-80 rounded-lg p-3 mb-4">
+              <div className="text-sm font-medium mb-2">Motion Test</div>
+              <div className="flex justify-center space-x-4 text-xs">
+                <div>α: {motion.alpha.toFixed(1)}°</div>
+                <div>β: {motion.beta.toFixed(1)}°</div>
+                <div className={`font-bold ${Math.abs(motion.gamma) > 5 ? 'text-yellow-300' : 'text-white'}`}>
+                  γ: {motion.gamma.toFixed(1)}°
+                </div>
+              </div>
+              <div className="text-xs mt-2 opacity-75">
+                Gamma (γ) controls left/right guidance
+              </div>
+            </div>
+          )}
 
           {/* Welcome message when no session */}
           {!session && permissionsGranted && (
@@ -244,6 +272,7 @@ export const CameraGuidance: React.FC = () => {
               <h2 className="text-lg font-bold mb-2">Welcome!</h2>
               <p className="text-sm">
                 Tap "Start Capture" in the top-right corner to begin taking aligned photos.
+                {motionSupported && <span className="block mt-1">Tilt your device to see the guidance arrows!</span>}
               </p>
             </div>
           )}

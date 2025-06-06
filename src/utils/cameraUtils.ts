@@ -21,15 +21,21 @@ export const calculateAlignment = (
   deviceMotion: DeviceMotion,
   tolerance: number = 15
 ): CameraAlignment => {
-  // Simulate camera alignment based on device motion
-  // In a real implementation, this would use actual camera position data
-  const horizontalOffset = deviceMotion.gamma || 0; // Left/right tilt
-  const verticalOffset = deviceMotion.beta || 0;    // Forward/back tilt
-  const rotation = deviceMotion.alpha || 0;         // Rotation around vertical axis
+  // Use gamma for left/right movement (device tilt)
+  // Gamma ranges from -90 to +90 degrees
+  // Negative gamma = device tilted left, positive gamma = device tilted right
+  const horizontalOffset = (deviceMotion.gamma || 0) * 2; // Amplify for better sensitivity
+  
+  // Use beta for forward/back tilt  
+  const verticalOffset = deviceMotion.beta || 0;
+  
+  // Use alpha for rotation (compass heading)
+  const rotation = deviceMotion.alpha || 0;
 
+  // Check alignment with tighter tolerance for better precision
   const isHorizontallyAligned = Math.abs(horizontalOffset) < tolerance;
-  const isVerticallyAligned = Math.abs(verticalOffset) < tolerance;
-  const isRotationAligned = Math.abs(rotation) < tolerance;
+  const isVerticallyAligned = Math.abs(verticalOffset - 45) < 30; // Allow some forward tilt
+  const isRotationAligned = true; // Don't require rotation alignment for now
 
   return {
     isAligned: isHorizontallyAligned && isVerticallyAligned && isRotationAligned,
