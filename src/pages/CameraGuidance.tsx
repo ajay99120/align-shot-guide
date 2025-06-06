@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useCallback } from 'react';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { CameraOverlay } from '../components/CameraOverlay';
@@ -24,6 +25,7 @@ export const CameraGuidance: React.FC = () => {
   const [debugInfo, setDebugInfo] = useState<string>('App loaded');
   const [permissionsGranted, setPermissionsGranted] = useState(false);
   const [permissionsRequested, setPermissionsRequested] = useState(false);
+  const [showPermissionPrompt, setShowPermissionPrompt] = useState(true);
   
   const { motion, isSupported: motionSupported } = useDeviceMotion();
   const { triggerSuccess, triggerWarning, triggerError } = useHapticFeedback();
@@ -44,108 +46,55 @@ export const CameraGuidance: React.FC = () => {
     setDebugInfo(`Motion: ${motionSupported ? 'OK' : 'NO'} | ${motionString} | ${alignmentString} | Dir: ${guidanceDirection}`);
   }, [motionSupported, motion, alignment, guidanceDirection]);
 
-  // Aggressive permission request on mount
-  useEffect(() => {
-    const requestPermissions = async () => {
-      if (permissionsRequested) return;
-      
-      try {
-        console.log('Requesting camera permissions aggressively...');
-        setPermissionsRequested(true);
-        
-        // First check current permissions
-        const currentPermissions = await Camera.checkPermissions();
-        console.log('Current permissions:', currentPermissions);
-        
-        if (currentPermissions.camera === 'granted' && currentPermissions.photos === 'granted') {
-          setPermissionsGranted(true);
-          setDebugInfo(prev => prev + ' | Permissions already granted');
-          toast.success('Camera permissions ready!');
-          return;
-        }
-        
-        // Request permissions with prompt
-        console.log('Requesting permissions with prompt...');
-        const permissions = await Camera.requestPermissions({
-          permissions: ['camera', 'photos']
-        });
-        console.log('Permission request result:', permissions);
-        
-        if (permissions.camera === 'granted' && permissions.photos === 'granted') {
-          setPermissionsGranted(true);
-          setDebugInfo(prev => prev + ' | Camera permissions granted');
-          toast.success('Camera permissions granted! You can now start capturing.');
-        } else if (permissions.camera === 'denied' || permissions.photos === 'denied') {
-          setPermissionsGranted(false);
-          setDebugInfo(prev => prev + ' | Camera permissions denied');
-          toast.error('Camera permissions denied. Please enable them in your device settings and restart the app.');
-        } else if (permissions.camera === 'prompt' || permissions.photos === 'prompt') {
-          // Try requesting again if still in prompt state
-          toast.info('Please allow camera permissions when prompted.');
-          setTimeout(async () => {
-            try {
-              const retryPermissions = await Camera.requestPermissions();
-              if (retryPermissions.camera === 'granted' && retryPermissions.photos === 'granted') {
-                setPermissionsGranted(true);
-                toast.success('Camera permissions granted!');
-              }
-            } catch (retryError) {
-              console.log('Retry permission request failed:', retryError);
-            }
-          }, 1000);
-        }
-      } catch (error) {
-        console.error('Permission error:', error);
-        setPermissionsGranted(false);
-        setDebugInfo(prev => prev + ' | Camera permissions failed');
-        
-        // Check if this is a web environment
-        if (error && typeof error === 'object' && 'message' in error && 
-            (error as any).message?.includes('Not implemented on web')) {
-          toast.info('Running in web mode - camera features limited');
-          setPermissionsGranted(true); // Allow testing in web
-        } else {
-          toast.error('Failed to request camera permissions. Please check your device settings.');
-        }
-      }
-    };
-    
-    // Add a small delay to ensure the app is fully loaded
-    const timer = setTimeout(() => {
-      requestPermissions();
-    }, 500);
-    
-    return () => clearTimeout(timer);
-  }, [permissionsRequested]);
-
-  // Manual permission request function
-  const requestPermissionsManually = async () => {
+  // Function to trigger actual camera access (which requests permissions)
+  const requestCameraPermissions = async () => {
     try {
-      setDebugInfo(prev => prev + ' | Manual permission request');
-      toast.info('Requesting camera permissions...');
+      console.log('Attempting to trigger camera access to request permissions...');
+      setPermissionsRequested(true);
+      setDebugInfo(prev => prev + ' | Requesting via camera access');
       
-      const permissions = await Camera.requestPermissions({
-        permissions: ['camera', 'photos']
+      // Try to access the camera - this will trigger Android permission dialog
+      const image = await Camera.getPhoto({
+        quality: 50,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Camera,
+        saveToGallery: false,
       });
       
-      console.log('Manual permission result:', permissions);
+      // If we got here, permissions were granted
+      console.log('Camera access successful - permissions granted!');
+      setPermissionsGranted(true);
+      setShowPermissionPrompt(false);
+      setDebugInfo(prev => prev + ' | Camera permissions granted via access');
+      toast.success('Camera permissions granted! You can now start capturing.');
       
-      if (permissions.camera === 'granted' && permissions.photos === 'granted') {
-        setPermissionsGranted(true);
-        toast.success('Camera permissions granted!');
-      } else {
-        toast.error('Please enable camera permissions in your device settings.');
-      }
     } catch (error) {
-      console.error('Manual permission request failed:', error);
-      toast.error('Failed to request permissions. Please enable them manually in device settings.');
+      console.error('Camera access failed:', error);
+      setPermissionsGranted(false);
+      setDebugInfo(prev => prev + ' | Camera access failed');
+      
+      if (error && typeof error === 'object' && 'message' in error) {
+        const message = (error as any).message;
+        if (message.includes('User cancelled') || message.includes('denied')) {
+          toast.error('Camera permission denied. Please enable it in your device settings.');
+        } else if (message.includes('Not implemented on web')) {
+          toast.info('Running in web mode - camera features limited');
+          setPermissionsGranted(true);
+          setShowPermissionPrompt(false);
+        } else {
+          toast.error(`Camera error: ${message}`);
+        }
+      } else {
+        toast.error('Failed to access camera. Please check permissions in device settings.');
+      }
     }
   };
 
   const startSession = useCallback(() => {
     if (!permissionsGranted) {
       toast.error('Camera permissions required to start session');
-      requestPermissionsManually();
+      requestCameraPermissions();
       return;
     }
     
@@ -195,7 +144,7 @@ export const CameraGuidance: React.FC = () => {
 
     if (!permissionsGranted) {
       toast.error('Camera permissions required to capture images');
-      requestPermissionsManually();
+      requestCameraPermissions();
       return;
     }
 
@@ -287,27 +236,35 @@ export const CameraGuidance: React.FC = () => {
             {motionSupported ? 'Motion detection active' : 'Motion detection unavailable'}
           </div>
           
-          {/* Permission status with manual request button */}
-          <div className={`rounded-lg p-3 mb-4 ${
-            permissionsGranted ? 'bg-green-600 bg-opacity-80' : 'bg-red-600 bg-opacity-80'
-          }`}>
-            <div className="text-sm font-medium mb-2">
-              Camera Permissions: {permissionsGranted ? '✓ Granted' : '✗ Required'}
-            </div>
-            {!permissionsGranted && (
-              <div className="space-y-2">
-                <div className="text-xs">
-                  Enable camera permissions to use this app
-                </div>
-                <button
-                  onClick={requestPermissionsManually}
-                  className="bg-white bg-opacity-20 hover:bg-opacity-30 text-white px-3 py-1 rounded text-xs font-medium transition-colors"
-                >
-                  Request Permissions
-                </button>
+          {/* Permission Request Card - More prominent */}
+          {showPermissionPrompt && !permissionsGranted && (
+            <div className="bg-red-600 bg-opacity-90 rounded-lg p-6 mb-4 border-2 border-red-400">
+              <div className="text-lg font-bold mb-3">⚠️ Camera Access Required</div>
+              <div className="text-sm mb-4">
+                This app needs camera permissions to function. 
+                Tap the button below to request access.
               </div>
-            )}
-          </div>
+              <button
+                onClick={requestCameraPermissions}
+                className="bg-white text-red-600 hover:bg-gray-100 px-6 py-3 rounded-lg text-sm font-bold transition-colors w-full"
+                disabled={permissionsRequested}
+              >
+                {permissionsRequested ? 'Requesting...' : 'Enable Camera Access'}
+              </button>
+              <div className="text-xs mt-3 opacity-75">
+                You'll see an Android permission dialog after tapping
+              </div>
+            </div>
+          )}
+
+          {/* Permission status */}
+          {permissionsGranted && (
+            <div className="bg-green-600 bg-opacity-80 rounded-lg p-3 mb-4">
+              <div className="text-sm font-medium">
+                ✅ Camera Permissions: Granted
+              </div>
+            </div>
+          )}
           
           {/* Enhanced debug information for mobile testing */}
           <div className="bg-black bg-opacity-50 rounded-lg p-3 mb-4 text-xs space-y-1">
